@@ -2,12 +2,21 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 
-export function createLogger(level = 'info') {
+/** Console logger. `sink(level, message, time)` additionally receives every line (used by the desktop app). */
+export function createLogger(level = 'info', sink = null) {
   const min = LEVELS[level] ?? LEVELS.info;
   const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const out = (lvl, tag) => (...args) => {
+  const out = (lvl, tag, kind = lvl) => (...args) => {
     if (LEVELS[lvl] < min) return;
-    const line = `${ts()} ${tag} ${args.join(' ')}`;
+    const msg = args.join(' ');
+    const line = `${ts()} ${tag} ${msg}`;
+    if (sink) {
+      try {
+        sink(kind, msg, Date.now());
+      } catch {
+        /* never let the UI break the bot */
+      }
+    }
     if (lvl === 'error' || lvl === 'warn') console.error(line);
     else console.log(line);
   };
@@ -16,7 +25,7 @@ export function createLogger(level = 'info') {
     info: out('info', '[INFO]'),
     warn: out('warn', '[WARN]'),
     error: out('error', '[ERR] '),
-    trade: out('info', '[TRADE]'),
+    trade: out('info', '[TRADE]', 'trade'),
   };
 }
 

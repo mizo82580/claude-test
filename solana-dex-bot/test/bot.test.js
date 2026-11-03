@@ -164,3 +164,36 @@ test('positions survive a restart', async () => {
   assert.equal(again.positions.size, 1);
   assert.equal(again.stats.buys, 1);
 });
+
+test('snapshot, manual sell and stop for the desktop app', async () => {
+  const h = harness();
+  await h.bot.discoveryTick();
+  await h.bot.scanTick();
+  h.state.priceMultiplier = 1.03;
+  await h.bot.monitorTick();
+  const snap = h.bot.snapshot();
+  assert.equal(snap.positions.length, 1);
+  assert.equal(snap.mode, 'paper');
+  assert.ok(snap.positions[0].pnlPct > 0);
+  assert.equal(snap.rules.takeProfitPct, 10);
+  assert.equal(snap.watchCount, 1);
+
+  assert.equal(await h.bot.sellNow(snap.positions[0].mint), true);
+  assert.equal(h.store.positions.size, 0);
+  assert.match(h.state.trades.at(-1), /MANUAL/);
+  assert.equal(h.store.readTrades().length, 1);
+  assert.equal(h.store.readTrades()[0].reason, 'MANUAL');
+
+  const t0 = Date.now();
+  const running = h.bot.run();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(h.bot.isRunning(), true);
+  h.bot.stop();
+  await running;
+  assert.equal(h.bot.isRunning(), false);
+  assert.ok(Date.now() - t0 < 3000, 'stop should be quick');
+
+  h.store.resetPaper();
+  assert.equal(h.store.readTrades().length, 0);
+  assert.equal(h.store.state.paperBalanceLamports, 1e9);
+});

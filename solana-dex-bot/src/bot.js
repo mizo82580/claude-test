@@ -1,7 +1,7 @@
 import { SOL_MINT, solToLamports, lamportsToSol } from './config.js';
 import { checkMarket, scoreCandidate, exitDecision, roundtripLossPct } from './strategy.js';
 import { evaluateShield } from './safety.js';
-import { sleep, fmtPct, fmtSol, shortMint } from './util.js';
+import { fmtPct, fmtSol, shortMint } from './util.js';
 
 /**
  * The trading engine. All I/O comes in through `deps` so it can be tested offline.
@@ -21,7 +21,23 @@ export function createBot(deps) {
   const busy = new Set(); // mints with a buy/sell in flight
   let pauseUntil = 0;
   let stopping = false;
+  let running = false;
   let lastGateMsg = '';
+  let lastScan = { at: 0, watched: 0, passed: 0 };
+  const wakers = new Set();
+
+  /** sleep that ends early when the bot is stopped */
+  function nap(ms) {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        wakers.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      wakers.add(done);
+    });
+  }
 
   // ---------- gates ----------
   function canOpen() {
@@ -38,7 +54,8 @@ export function createBot(deps) {
 
   // ---------- discovery ----------
   async function discoveryTick() {
-    const found = await market.discover(cfg);
+    const found = await market.discover(cfg, () => stopping);
+    if (stopping) return;
     let added = 0;
     const t = now();
     for (const tok of found) {
@@ -68,7 +85,8 @@ export function createBot(deps) {
     const mints = [...watch.keys()];
     if (!mints.length) return;
 
-    const stats = await market.getStats(mints);
+    const stats = await market.getStats(mints, () => stopping);
+    if (stopping) return;
     const t = now();
     const passed = [];
     for (const mint of mints) {
@@ -87,6 +105,7 @@ export function createBot(deps) {
       if (t - (lastEval.get(mint) ?? 0) < cfg.recheckAfterSec * 1000) continue;
       if (checkMarket(p, cfg, t).ok) passed.push(p);
     }
+    lastScan = { at: t, watched: mints.length, passed: passed.length };
     if (passed.length) log.info(`Scan: ${mints.length} watched, ${passed.length} passed market filters`);
     else log.debug(`Scan: ${mints.length} watched, none passed`);
 
@@ -285,16 +304,27 @@ export function createBot(deps) {
       } catch (e) {
         log.error(`${name}: ${e.message}`);
       }
-      await sleep(Math.max(200, intervalMs - (Date.now() - t0)));
+      if (!stopping) await nap(Math.max(200, intervalMs - (Date.now() - t0)));
     }
   }
 
   async function run() {
+    if (running) throw new Error('already running');
+    running = true;
+    stopping = false;
+    try {
+      await runLoops();
+    } finally {
+      running = false;
+    }
+  }
+
+  async function runLoops() {
     await Promise.all([
       loop('monitor', monitorTick, cfg.priceCheckMs),
       loop('discovery', discoveryTick, cfg.discoveryIntervalSec * 1000),
       (async () => {
-        await sleep(3000); // let discovery fill the watchlist first
+        await nap(3000); // let discovery fill the watchlist first
         await loop('scan', scanTick, cfg.scanIntervalSec * 1000);
       })(),
       loop('status', heartbeat, 60000),
@@ -303,7 +333,79 @@ export function createBot(deps) {
 
   function stop() {
     stopping = true;
+    for (const w of [...wakers]) w();
   }
 
-  return { run, stop, discoveryTick, scanTick, monitorTick, heartbeat, canOpen, watch, blacklist, closePos };
+  /** Plain-data view of the bot for the desktop UI. */
+  function snapshot() {
+    store.rollDay();
+    const t = now();
+    return {
+      running,
+      stopping: running && stopping,
+      mode: cfg.mode,
+      gate: lastGateMsg || null,
+      watchCount: watch.size,
+      blacklistCount: blacklist.size,
+      lastScan,
+      paperBalanceSol: lamportsToSol(store.state.paperBalanceLamports),
+      stats: { ...store.stats, pnlSol: lamportsToSol(store.stats.pnlLamports) },
+      positions: [...store.positions.values()].map((p) => ({
+        mint: p.mint,
+        symbol: p.symbol,
+        dex: p.dex,
+        url: p.url,
+        openedAt: p.openedAt,
+        heldSec: Math.round((t - p.openedAt) / 1000),
+        costSol: lamportsToSol(p.costLamports),
+        pnlPct: Number.isFinite(p.lastPnlPct) ? p.lastPnlPct : null,
+        peakPct: Number.isFinite(p.peakPnlPct) ? p.peakPnlPct : null,
+        selling: busy.has(p.mint),
+        sellFails: p.sellFails ?? 0,
+        entry: p.entry ?? null,
+      })),
+      rules: {
+        tradeSizeSol: cfg.tradeSizeSol,
+        maxOpenPositions: cfg.maxOpenPositions,
+        takeProfitPct: cfg.takeProfitPct,
+        stopLossPct: cfg.stopLossPct,
+        trailActivatePct: cfg.trailActivatePct,
+        trailDistancePct: cfg.trailDistancePct,
+        maxHoldSec: cfg.maxHoldSec,
+        maxDailyLossSol: cfg.maxDailyLossSol,
+      },
+    };
+  }
+
+  /** Manual sell from the UI. */
+  async function sellNow(mint) {
+    const pos = store.positions.get(mint);
+    if (!pos) throw new Error('position not found');
+    if (busy.has(mint)) throw new Error('already selling');
+    await closePos(pos, 'MANUAL');
+    return !store.positions.has(mint);
+  }
+
+  async function sellAll() {
+    let sold = 0;
+    for (const pos of [...store.positions.values()]) if (await sellNow(pos.mint).catch(() => false)) sold++;
+    return { sold, remaining: store.positions.size };
+  }
+
+  return {
+    run,
+    stop,
+    snapshot,
+    sellNow,
+    sellAll,
+    discoveryTick,
+    scanTick,
+    monitorTick,
+    heartbeat,
+    canOpen,
+    watch,
+    blacklist,
+    closePos,
+    isRunning: () => running,
+  };
 }

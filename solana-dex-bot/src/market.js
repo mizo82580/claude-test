@@ -18,12 +18,13 @@ export function createMarket(log) {
   const geckoLimiter = new RateLimiter(2500);
   const dexsLimiter = new RateLimiter(250);
 
-  async function get(limiter, url) {
+  async function get(limiter, url, isStopped = () => false) {
     for (let attempt = 0; ; attempt++) {
+      if (isStopped()) throw new Error('stopped');
       try {
         return await limiter.schedule(() => fetchJson(url, { timeoutMs: 12000 }));
       } catch (e) {
-        if (isRetryable(e) && attempt < 2) {
+        if (isRetryable(e) && attempt < 2 && !isStopped()) {
           limiter.penalize(3000 * (attempt + 1));
           continue;
         }
@@ -47,15 +48,16 @@ export function createMarket(log) {
   }
 
   /** Returns [{mint, createdAt, liquidityUsd, source}] of young tokens. */
-  async function discover(cfg) {
+  async function discover(cfg, isStopped = () => false) {
     const found = [];
     const urls = [];
     for (let p = 1; p <= cfg.geckoNewPoolPages; p++) urls.push(['gecko-new', `${GECKO}/new_pools?page=${p}`]);
     if (cfg.useGeckoTrending) urls.push(['gecko-trending', `${GECKO}/trending_pools?duration=5m&page=1`]);
 
     for (const [source, url] of urls) {
+      if (isStopped()) return found;
       try {
-        const data = await get(geckoLimiter, url);
+        const data = await get(geckoLimiter, url, isStopped);
         for (const item of data?.data ?? []) {
           const t = geckoPoolToMint(item);
           if (t) found.push({ ...t, source });
@@ -70,8 +72,9 @@ export function createMarket(log) {
         ['dexs-profiles', `${DEXS}/token-profiles/latest/v1`],
         ['dexs-boosts', `${DEXS}/token-boosts/latest/v1`],
       ]) {
+        if (isStopped()) return found;
         try {
-          const data = await get(dexsLimiter, url);
+          const data = await get(dexsLimiter, url, isStopped);
           for (const t of Array.isArray(data) ? data : []) {
             if (t?.chainId === 'solana' && t.tokenAddress && !MAJOR_MINTS.has(t.tokenAddress)) {
               found.push({ mint: t.tokenAddress, createdAt: 0, liquidityUsd: 0, source });
@@ -110,12 +113,13 @@ export function createMarket(log) {
    * Fresh stats for many mints (30 per request). For each mint returns the
    * most liquid pair where the mint is the base token and quote is SOL/USDC/USDT.
    */
-  async function getStats(mints) {
+  async function getStats(mints, isStopped = () => false) {
     const out = new Map();
     for (let i = 0; i < mints.length; i += 30) {
+      if (isStopped()) break;
       const chunk = mints.slice(i, i + 30);
       try {
-        const pairs = await get(dexsLimiter, `${DEXS}/tokens/v1/solana/${chunk.join(',')}`);
+        const pairs = await get(dexsLimiter, `${DEXS}/tokens/v1/solana/${chunk.join(',')}`, isStopped);
         for (const raw of Array.isArray(pairs) ? pairs : []) {
           const p = normalizePair(raw);
           if (!p.mint || !chunk.includes(p.mint) || !MAJOR_MINTS.has(p.quoteMint)) continue;

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Solana Momentum Bot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a77bff" />
+              <stop offset="1" stop-color="#1ee3a4" />
+            </linearGradient>
+          </defs>
+          <path d="M24 3 42 13.5v21L24 45 6 34.5v-21z" fill="url(#lg)" />
+          <path d="M26.5 11 15 27h8l-2 10 12-16h-8z" fill="#07090f" />
+        </svg>
+        <div class="brand-text">
+          <strong>Solana Momentum</strong>
+          <span>Trading Bot</span>
+        </div>
+      </div>
+
+      <div class="titlebar-actions">
+        <span id="modePill" class="pill pill-paper">PAPER</span>
+        <span id="statusChip" class="status-chip"><i></i><b>متوقف</b></span>
+        <button id="sellAllBtn" class="btn btn-ghost-danger" title="بيع كل الصفقات المفتوحة">
+          <svg class="ic"><use href="#i-zap" /></svg>بيع الكل
+        </button>
+        <button id="startStopBtn" class="btn btn-primary">
+          <svg class="ic"><use href="#i-play" /></svg><span>تشغيل البوت</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <nav class="sidebar">
+        <button class="nav-item active" data-page="dashboard"><svg class="ic"><use href="#i-dashboard" /></svg>لوحة التحكم</button>
+        <button class="nav-item" data-page="history"><svg class="ic"><use href="#i-history" /></svg>سجل الصفقات</button>
+        <button class="nav-item" data-page="logs"><svg class="ic"><use href="#i-terminal" /></svg>السجل المباشر <em id="errBadge" class="nav-badge" hidden>0</em></button>
+        <button class="nav-item" data-page="settings"><svg class="ic"><use href="#i-sliders" /></svg>الإعدادات</button>
+
+        <div class="sidebar-foot">
+          <div class="wallet-card">
+            <div class="wallet-head"><svg class="ic"><use href="#i-wallet" /></svg>محفظة البوت</div>
+            <div id="walletAddr" class="wallet-addr mono">غير مضافة</div>
+            <button id="copyAddr" class="icon-btn" title="نسخ العنوان" hidden><svg class="ic"><use href="#i-copy" /></svg></button>
+          </div>
+          <div class="foot-meta">
+            <span id="jupState">Jupiter</span>
+            <span id="appVersion" class="mono"></span>
+          </div>
+        </div>
+      </nav>
+
+      <main id="main">
+        <!-- ================= DASHBOARD ================= -->
+        <section class="page active" id="page-dashboard">
+          <div id="configBanner" class="banner banner-danger" hidden></div>
+          <div id="gateBanner" class="banner banner-warn" hidden></div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpi-label"><svg class="ic"><use href="#i-wallet" /></svg><span id="balLabel">رصيد المحاكاة</span></div>
+              <div class="kpi-value mono" id="kpiBalance">—</div>
+              <div class="kpi-sub" id="kpiBalanceSub">SOL</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-label"><svg class="ic"><use href="#i-trending" /></svg>ربح اليوم</div>
+              <div class="kpi-value mono" id="kpiPnl">—</div>
+              <div class="kpi-sub" id="kpiPnlSub">بالـ SOL من بداية اليوم</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-label"><svg class="ic"><use href="#i-pie" /></svg>نسبة النجاح اليوم</div>
+              <div class="kpi-value mono" id="kpiWin">—</div>
+              <div class="kpi-sub" id="kpiWinSub">0 ربح · 0 خسارة</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-label"><svg class="ic"><use href="#i-layers" /></svg>صفقات مفتوحة</div>
+              <div class="kpi-value mono" id="kpiOpen">0</div>
+              <div class="kpi-sub" id="kpiOpenSub">من 2 · 0 صفقة النهارده</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-label"><svg class="ic"><use href="#i-search" /></svg>تحت المراقبة</div>
+              <div class="kpi-value mono" id="kpiWatch">0</div>
+              <div class="kpi-sub" id="kpiWatchSub">عملة جديدة</div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-head">
+                <h3>منحنى الأرباح</h3>
+                <div class="seg" id="equityRange">
+                  <button data-range="today" class="active">اليوم</button>
+                  <button data-range="7d">7 أيام</button>
+                  <button data-range="all">الكل</button>
+                </div>
+              </div>
+              <div class="chart-wrap" dir="ltr">
+                <svg id="equityChart" class="chart" role="img" aria-label="منحنى الأرباح التراكمي بالـ SOL"></svg>
+                <div id="chartTip" class="chart-tip" hidden></div>
+                <div id="chartEmpty" class="empty small">لسه مفيش صفقات مقفولة في الفترة دي</div>
+              </div>
+            </div>
+
+            <div class="card rules-card">
+              <div class="card-head"><h3>قواعد الاستراتيجية</h3><button class="link-btn" data-goto="settings">تعديل</button></div>
+              <div class="rules" id="rules"></div>
+            </div>
+          </div>
+
+          <div class="grid-2 grid-2b">
+            <div class="card">
+              <div class="card-head">
+                <h3>الصفقات المفتوحة</h3>
+                <span class="muted" id="posHint">بتتحدث كل ثانية</span>
+              </div>
+              <div id="positions" class="positions"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h3>النشاط</h3><button class="link-btn" data-goto="logs">السجل الكامل</button></div>
+              <ul id="activity" class="activity"></ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= HISTORY ================= -->
+        <section class="page" id="page-history">
+          <div class="page-head">
+            <h2>سجل الصفقات</h2>
+            <div class="head-actions">
+              <button id="openDataBtn" class="btn btn-ghost"><svg class="ic"><use href="#i-folder" /></svg>فتح فولدر البيانات</button>
+              <button id="resetPaperBtn" class="btn btn-ghost-danger"><svg class="ic"><use href="#i-refresh" /></svg>تصفير المحاكاة</button>
+            </div>
+          </div>
+          <div class="kpis kpis-6" id="histStats"></div>
+          <div class="card">
+            <div class="card-head">
+              <div class="seg" id="histFilter">
+                <button data-f="all" class="active">الكل</button>
+                <button data-f="win">رابحة</button>
+                <button data-f="loss">خاسرة</button>
+              </div>
+              <span class="muted" id="histCount"></span>
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="histTable">
+                <thead>
+                  <tr>
+                    <th>الوقت</th>
+                    <th>العملة</th>
+                    <th>سبب الخروج</th>
+                    <th class="num">دخول (SOL)</th>
+                    <th class="num">خروج (SOL)</th>
+                    <th class="num">الربح (SOL)</th>
+                    <th class="num">%</th>
+                    <th class="num">أعلى %</th>
+                    <th class="num">المدة</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div id="histEmpty" class="empty">لسه مفيش صفقات. شغّل البوت وسيبه يشتغل.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= LOGS ================= -->
+        <section class="page" id="page-logs">
+          <div class="page-head">
+            <h2>السجل المباشر</h2>
+            <div class="head-actions">
+              <div class="seg" id="logFilter">
+                <button data-l="all" class="active">الكل</button>
+                <button data-l="trade">صفقات</button>
+                <button data-l="warn">تحذيرات</button>
+                <button data-l="error">أخطاء</button>
+              </div>
+              <input id="logSearch" class="input input-sm" placeholder="بحث..." />
+              <label class="switch-inline"><input type="checkbox" id="autoScroll" checked /><span>تمرير تلقائي</span></label>
+              <button id="clearLogs" class="btn btn-ghost">مسح العرض</button>
+            </div>
+          </div>
+          <div id="logBox" class="logbox mono" dir="ltr"></div>
+        </section>
+
+        <!-- ================= SETTINGS ================= -->
+        <section class="page" id="page-settings">
+          <div class="page-head">
+            <h2>الإعدادات</h2>
+            <span class="muted">كل التغييرات بتتطبق مع التشغيل الجاي</span>
+          </div>
+          <div id="settingsLock" class="banner banner-warn" hidden>البوت شغال. أوقفه الأول عشان تقدر تحفظ الإعدادات.</div>
+          <div id="settingsForm" class="settings"></div>
+          <div class="savebar">
+            <span id="saveMsg" class="muted"></span>
+            <button id="resetDefaults" class="btn btn-ghost">القيم المقترحة</button>
+            <button id="saveSettings" class="btn btn-primary"><svg class="ic"><use href="#i-check" /></svg>حفظ الإعدادات</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toasts" class="toasts"></div>
+
+    <div id="modal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="modal-icon" id="modalIcon"><svg class="ic"><use href="#i-alert" /></svg></div>
+        <h3 id="modalTitle"></h3>
+        <div id="modalBody" class="modal-body"></div>
+        <div class="modal-actions">
+          <button id="modalCancel" class="btn btn-ghost">إلغاء</button>
+          <button id="modalOk" class="btn btn-primary">تأكيد</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- icon sprite -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></symbol>
+        <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></symbol>
+        <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4" /></symbol>
+        <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></symbol>
+        <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></symbol>
+        <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></symbol>
+        <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></symbol>
+        <symbol id="i-exit" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></symbol>
+        <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></symbol>
+        <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" /></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></symbol>
+        <symbol id="i-trending" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></symbol>
+        <symbol id="i-pie" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83" /><path d="M22 12A10 10 0 0 0 12 2v10z" /></symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></symbol>
+        <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="15" x2="23" y2="15" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="15" x2="4" y2="15" /></symbol>
+        <symbol id="i-radar" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 1 0 22 12" /><path d="M16.24 7.76A6 6 0 1 0 18 12" /><line x1="12" y1="12" x2="19" y2="5" /><circle cx="12" cy="12" r="1.5" /></symbol>
+      </defs>
+    </svg>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

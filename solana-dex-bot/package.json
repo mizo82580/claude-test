@@ -1,9 +1,11 @@
 {
   "name": "solana-dex-bot",
-  "version": "1.0.0",
+  "productName": "Solana Momentum Bot",
+  "version": "1.1.0",
   "description": "Momentum bot for new Solana tokens: scans DexScreener/GeckoTerminal, checks safety, trades via Jupiter. Paper mode by default.",
+  "author": "mizo82580",
   "type": "module",
-  "main": "src/index.js",
+  "main": "app/main.js",
   "engines": {
     "node": ">=20.12"
   },
@@ -11,10 +13,49 @@
     "start": "node src/index.js",
     "sell-all": "node src/sell-all.js",
     "wallet": "node src/wallet-info.js",
+    "app": "electron .",
+    "dist": "electron-builder --win --x64",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@solana/web3.js": "1.99.0",
     "bs58": "6.0.0"
+  },
+  "devDependencies": {
+    "electron": "44.9.0",
+    "electron-builder": "26.17.0",
+    "resedit": "3.1.0"
+  },
+  "build": {
+    "appId": "com.mizo82580.solanamomentumbot",
+    "productName": "Solana Momentum Bot",
+    "executableName": "SolanaMomentumBot",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "app/**",
+      "src/**",
+      "package.json"
+    ],
+    "asar": true,
+    "afterPack": "build/after-pack.mjs",
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "SolanaMomentumBot-${version}.exe"
+    },
+    "npmRebuild": false
   }
 }

@@ -58,6 +58,44 @@ export function createStore(cfg, dir = DATA_DIR) {
     rollDay,
     savePositions,
 
+    /** All closed trades from the CSV, oldest first. */
+    readTrades() {
+      if (!fs.existsSync(tradesFile)) return [];
+      return fs
+        .readFileSync(tradesFile, 'utf8')
+        .split('\n')
+        .slice(1)
+        .filter((l) => l.trim())
+        .map((l) => {
+          const c = l.split(',');
+          return {
+            time: c[0],
+            mint: c[1],
+            symbol: c[2],
+            reason: c[3],
+            costSol: Number(c[4]),
+            outSol: Number(c[5]),
+            pnlSol: Number(c[6]),
+            pnlPct: Number(c[7]),
+            holdSec: Number(c[8]),
+            peakPct: c[9] === '' ? null : Number(c[9]),
+            buySig: c[10] || null,
+            sellSig: c[11] || null,
+          };
+        });
+    },
+
+    /** Paper mode only: wipe history and start again with a fresh balance. */
+    resetPaper() {
+      if (cfg.mode !== 'paper') throw new Error('reset is only for paper mode');
+      positions.clear();
+      savePositions();
+      state.paperBalanceLamports = solToLamports(cfg.paperStartBalanceSol);
+      saveState();
+      if (fs.existsSync(tradesFile)) fs.unlinkSync(tradesFile);
+      Object.assign(stats, { day: todayKey(), buys: 0, closed: 0, wins: 0, losses: 0, pnlLamports: 0 });
+    },
+
     openPosition(pos) {
       rollDay();
       positions.set(pos.mint, pos);
